@@ -1725,8 +1725,11 @@ def test_high_below_low_is_reported():
 
 
 def test_reports_every_violating_row():
+    """총 개수가 아니라 두 행이 모두 보고되는지가 요점이다."""
     issues = validate_rows([row(volume=Decimal("-1")), row(market_area=MarketArea.LAND, avg_price=Decimal("-5"))])
     assert len(issues) == 2
+    assert any("거래량" in issue for issue in issues)
+    assert any("평균가" in issue for issue in issues)
 ```
 
 - [ ] **Step 2: 테스트 실패 확인**
@@ -1766,6 +1769,9 @@ def validate_rows(rows: list[RecMarketRow]) -> list[str]:
 def _validate_row(row: RecMarketRow) -> list[str]:
     label = f"{row.trade_date} {row.market_area}"
     issues: list[str] = []
+    # 0 이하로 이미 보고한 필드는 band 검사를 건너뛴다. 최저가보다 낮다는
+    # 지적은 0 이하라는 사실의 파생 결과라 새 정보를 주지 않는다.
+    non_positive: set[str] = set()
 
     for name, value in (
         ("평균가", row.avg_price),
@@ -1775,6 +1781,7 @@ def _validate_row(row: RecMarketRow) -> list[str]:
     ):
         if value is not None and value <= ZERO:
             issues.append(f"{label}: {name}가 0 이하다 ({value})")
+            non_positive.add(name)
 
     for name, value in (("거래량", row.volume), ("거래금액", row.trade_amount)):
         if value is not None and value < ZERO:
@@ -1783,8 +1790,9 @@ def _validate_row(row: RecMarketRow) -> list[str]:
     if row.high_price is not None and row.low_price is not None and row.high_price < row.low_price:
         issues.append(f"{label}: 최고가({row.high_price})가 최저가({row.low_price})보다 낮다")
 
-    issues.extend(_check_within_band("평균가", row.avg_price, row, label))
-    issues.extend(_check_within_band("종가", row.close_price, row, label))
+    for name, value in (("평균가", row.avg_price), ("종가", row.close_price)):
+        if name not in non_positive:
+            issues.extend(_check_within_band(name, value, row, label))
 
     return issues
 
