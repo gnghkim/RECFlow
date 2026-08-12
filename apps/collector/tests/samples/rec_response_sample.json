@@ -1,0 +1,47 @@
+{
+  "response": {
+    "header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
+    "body": {
+      "numOfRows": 10,
+      "pageNo": 1,
+      "totalCount": 3,
+      "items": {
+        "item": [
+          {
+            "tradeDay": "20260806",
+            "areaCd": "육지",
+            "tradeCnt": "412",
+            "tradeQty": "185000",
+            "avgPrice": "71500",
+            "highPrice": "72300",
+            "lowPrice": "70800",
+            "closePrice": "",
+            "tradeAmt": ""
+          },
+          {
+            "tradeDay": "20260806",
+            "areaCd": "제주",
+            "tradeCnt": "38",
+            "tradeQty": "9500",
+            "avgPrice": "70900",
+            "highPrice": "71400",
+            "lowPrice": "70200",
+            "closePrice": "",
+            "tradeAmt": ""
+          },
+          {
+            "tradeDay": "20260806",
+            "areaCd": "합계",
+            "tradeCnt": "450",
+            "tradeQty": "194500",
+            "avgPrice": "71450",
+            "highPrice": "72300",
+            "lowPrice": "70200",
+            "closePrice": "71600",
+            "tradeAmt": "13897550000"
+          }
+        ]
+      }
+    }
+  }
+}
