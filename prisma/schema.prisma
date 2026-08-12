@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MarketArea {
+  LAND
+  JEJU
+  TOTAL
+}
+
+enum CollectionJobType {
+  SCHEDULED
+  RECHECK
+  BACKFILL
+  MANUAL
+  GAP_SCAN
+}
+
+enum CollectionStatus {
+  SUCCESS
+  PARTIAL
+  NO_DATA
+  FAILED
+}
+
+/// REC 현물시장 거래일별 시세
+model RecMarket {
+  id          Int        @id @default(autoincrement())
+  tradeDate   DateTime   @map("trade_date") @db.Date
+  marketArea  MarketArea @map("market_area")
+  tradeCount  Int?       @map("trade_count")
+  volume      Decimal?   @db.Decimal(14, 2)
+  avgPrice    Decimal?   @map("avg_price") @db.Decimal(12, 2)
+  highPrice   Decimal?   @map("high_price") @db.Decimal(12, 2)
+  lowPrice    Decimal?   @map("low_price") @db.Decimal(12, 2)
+  /// 종가는 육지·제주 통합값으로만 제공되므로 TOTAL 행에만 채워진다
+  closePrice  Decimal?   @map("close_price") @db.Decimal(12, 2)
+  /// 거래금액도 통합값으로만 제공된다
+  tradeAmount Decimal?   @map("trade_amount") @db.Decimal(18, 2)
+  source      String     @db.VarChar(32)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@unique([tradeDate, marketArea], name: "rec_market_trade_date_market_area_key")
+  @@index([tradeDate])
+  @@map("rec_market")
+}
+
+/// API 원본 응답 보존. 매핑보다 먼저 저장한다.
+model RecMarketRaw {
+  id              Int            @id @default(autoincrement())
+  tradeDate       DateTime       @map("trade_date") @db.Date
+  endpoint        String         @db.VarChar(255)
+  httpStatus      Int            @map("http_status")
+  payload         Json
+  fetchedAt       DateTime       @default(now()) @map("fetched_at")
+  collectionRunId Int?           @map("collection_run_id")
+  collectionRun   CollectionRun? @relation(fields: [collectionRunId], references: [id], onDelete: SetNull)
+
+  @@index([tradeDate])
+  @@map("rec_market_raw")
+}
+
+/// 수집 실행 이력. 운영 모니터링과 누락일 탐지의 근거.
+model CollectionRun {
+  id           Int               @id @default(autoincrement())
+  jobType      CollectionJobType @map("job_type")
+  targetDate   DateTime?         @map("target_date") @db.Date
+  status       CollectionStatus
+  attempts     Int               @default(0)
+  rowsUpserted Int               @default(0) @map("rows_upserted")
+  errorMessage String?           @map("error_message")
+  startedAt    DateTime          @default(now()) @map("started_at")
+  finishedAt   DateTime?         @map("finished_at")
+
+  raws RecMarketRaw[]
+
+  @@index([targetDate])
+  @@index([startedAt])
+  @@map("collection_runs")
+}
+
+/// 발전소
+model Plant {
+  id            Int       @id @default(autoincrement())
+  name          String    @db.VarChar(120)
+  location      String?   @db.VarChar(200)
+  capacityKw    Decimal?  @map("capacity_kw") @db.Decimal(12, 2)
+  operationDate DateTime? @map("operation_date") @db.Date
+  /// 참고값. 평가액 계산에 사용하지 않는다.
+  recWeight     Decimal?  @map("rec_weight") @db.Decimal(4, 2)
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  inventories RecInventory[]
+  sales       RecSale[]
+
+  @@map("plants")
+}
+
+/// REC 발급 이력. rec_quantity는 가중치가 이미 적용된 수량이다.
+model RecInventory {
+  id          Int       @id @default(autoincrement())
+  plantId     Int       @map("plant_id")
+  issueDate   DateTime  @map("issue_date") @db.Date
+  recQuantity Decimal   @map("rec_quantity") @db.Decimal(14, 2)
+  /// 소멸 처리일. NULL이면 유효한 발급분이다.
+  expiredAt   DateTime? @map("expired_at") @db.Date
+  memo        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  plant Plant @relation(fields: [plantId], references: [id], onDelete: Restrict)
+
+  @@index([plantId])
+  @@index([issueDate])
+  @@map("rec_inventory")
+}
+
+/// 실제 매각 내역
+model RecSale {
+  id         Int      @id @default(autoincrement())
+  plantId    Int      @map("plant_id")
+  saleDate   DateTime @map("sale_date") @db.Date
+  quantity   Decimal  @db.Decimal(14, 2)
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(12, 2)
+  /// 실제 정산금액. 기본값은 quantity * unit_price이나 반올림 차이를 허용한다.
+  saleAmount Decimal  @map("sale_amount") @db.Decimal(18, 2)
+  buyer      String?  @db.VarChar(120)
+  memo       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  plant Plant @relation(fields: [plantId], references: [id], onDelete: Restrict)
+
+  @@index([plantId])
+  @@index([saleDate])
+  @@map("rec_sales")
+}
+
+/// 목표가격. 이번 범위에서는 표시·시뮬레이션 기준값으로만 쓰인다.
+model PriceTarget {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(120)
+  targetPrice Decimal  @map("target_price") @db.Decimal(12, 2)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("price_targets")
+}
