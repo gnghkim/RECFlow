@@ -1,0 +1,26 @@
+# 환경변수 (실제 비밀값은 절대 커밋하지 않는다)
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 백업 산출물
+infra/backup/dumps/
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
