@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 DEFAULT_FIXTURE_DIR = Path(__file__).parent / "fixtures"
+DEFAULT_SAMPLE_DIR = Path(__file__).parent / "api-samples"
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class Config:
     kpx_base_url: str
     kpx_daily_budget: int
     fixture_dir: Path
+    sample_dir: Path
     collector_port: int
 
 
@@ -40,5 +42,6 @@ def load_config() -> Config:
         kpx_base_url=os.environ.get("KPX_BASE_URL", "https://apis.data.go.kr/B552115/RecMarketInfo2"),
         kpx_daily_budget=int(os.environ.get("KPX_DAILY_BUDGET", "80")),
         fixture_dir=Path(os.environ.get("FIXTURE_DIR", DEFAULT_FIXTURE_DIR)),
+        sample_dir=Path(os.environ.get("SAMPLE_DIR", DEFAULT_SAMPLE_DIR)),
         collector_port=int(os.environ.get("COLLECTOR_PORT", "8000")),
     )

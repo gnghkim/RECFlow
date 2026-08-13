@@ -13,7 +13,6 @@ import json
 import logging
 import sys
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 from config import load_config
 from rec.budget import DailyBudget
@@ -21,9 +20,6 @@ from rec.client import RecApiClient
 from rec.fixture_client import FixtureClient, generate_fixtures
 from rec.repository import RecRepository
 from rec.service import CollectorService
-
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "docs" / "api-samples"
-
 
 def parse_day(text: str) -> date:
     return datetime.strptime(text, "%Y%m%d").date()
@@ -74,8 +70,8 @@ def cmd_probe(args, config) -> int:
     client = build_source(config, "api")
     response = client.fetch(parse_day(args.date))
 
-    SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
-    target = SAMPLE_DIR / f"rec-{args.date}.json"
+    config.sample_dir.mkdir(parents=True, exist_ok=True)
+    target = config.sample_dir / f"rec-{args.date}.json"
     target.write_text(json.dumps(response.payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"원본 응답을 {target}에 저장했다.")
