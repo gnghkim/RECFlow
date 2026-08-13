@@ -1,3 +1,20 @@
+# 이 파일은 **공용 Caddy가 없는 환경**에 배포할 때만 쓴다.
+#
+# 현재 운영 VPS에는 이미 공용 Caddy(/opt/caddy/Caddyfile)가 80/443을 점유하고
+# 여러 사내 서비스를 프록시한다. 그 경우 이 파일을 쓰지 않고 공용 Caddyfile에
+# 아래 블록만 추가한다.
+#
+#     rec.<도메인> {
+#         encode zstd gzip
+#         reverse_proxy recflow-web:3000
+#     }
+#
+# 추가 후 설정만 다시 읽는다. 컨테이너를 재시작하면 다른 서비스도 잠깐 끊긴다.
+#
+#     docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# ── 아래는 RECFlow 단독 배포용 설정이다 ────────────────────────────────
+
 {
 	email {$ACME_EMAIL}
 }
@@ -6,7 +23,7 @@
 	encode zstd gzip
 
 	# 웹만 외부에 노출한다. 수집기와 DB로 가는 경로는 존재하지 않는다.
-	reverse_proxy web:3000
+	reverse_proxy recflow-web:3000
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
