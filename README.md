@@ -14,7 +14,7 @@ REC 현물시장은 매주 화·목요일에만 열린다. 오늘 수집하지 �
 |---|---|---|
 | 계획 A | 수집 파이프라인 — 스키마, 수집기, 스케줄러, 백필 | **완료** |
 | 계획 B | 웹 — 인증, 대시보드, 시장분석, 보유REC, 시뮬레이션, 관리 | **완료** |
-| 계획 C | 배포 — 운영 compose, Caddy, 자동백업 | 예정 |
+| 계획 C | 배포 — 운영 compose, Caddy, 자동백업 | **완료** |
 
 - 테스트 **180개** 통과 (수집기 68 · 웹 112)
 - fixture 기준 3년치(거래일 313일 × 육지/제주/합계 = 939행) 적재 검증 완료
@@ -172,6 +172,11 @@ npm run dev
 호스트에서 실행하면 `/admin`의 수집기 상태가 `연결 불가`로 나온다.
 수집기는 Docker 내부 네트워크에만 있으므로 정상이다.
 
+### 운영 배포
+
+VPS 배포는 [배포 가이드](docs/deployment.md)를 따른다. 운영은 `docker-compose.prod.yml`을
+쓰며 Caddy가 HTTPS를 맡는다. 웹만 외부에 노출되고 DB와 수집기는 내부망에만 있다.
+
 ---
 
 ## 테스트
@@ -256,6 +261,7 @@ docs/
 
 ## 문서
 
+- [배포 가이드](docs/deployment.md) — VPS 초기 설정부터 배포·백업·복구까지
 - [설계문서](docs/superpowers/specs/2026-08-12-rec-price-tracker-design.md) — 아키텍처, 스키마, 계산 규칙, 변경 사유
 - [계획 A — 데이터 파이프라인](docs/superpowers/plans/2026-08-12-plan-a-data-pipeline.md)
 - [계획 B — 웹 애플리케이션](docs/superpowers/plans/2026-08-13-plan-b-web-application.md)
