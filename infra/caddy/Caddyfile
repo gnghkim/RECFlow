@@ -1,0 +1,25 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$RECFLOW_DOMAIN} {
+	encode zstd gzip
+
+	# 웹만 외부에 노출한다. 수집기와 DB로 가는 경로는 존재하지 않는다.
+	reverse_proxy web:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/recflow.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

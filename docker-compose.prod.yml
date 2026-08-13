@@ -1,0 +1,130 @@
+# 운영 전용. 로컬 개발은 docker-compose.yml 을 쓴다.
+#
+# 네트워크가 둘로 갈린다.
+#   edge     : caddy 와 web 만. 다른 사내 서비스가 나중에 합류한다.
+#   internal : db 와 collector. 외부에서 닿을 수 없다.
+# 이렇게 두면 나중에 edge 에 붙는 서비스가 RECFlow 의 DB에 접근하지 못한다.
+
+services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: recflow-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RECFLOW_DOMAIN: ${RECFLOW_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    networks:
+      - edge
+    depends_on:
+      - web
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: recflow-web:latest
+    container_name: recflow-web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      APP_PASSWORD: ${APP_PASSWORD}
+      AUTH_SECRET: ${AUTH_SECRET}
+      COLLECTOR_INTERNAL_URL: ${COLLECTOR_INTERNAL_URL}
+      TZ: ${TZ}
+    # 호스트 포트를 열지 않는다. Caddy만 접근한다.
+    networks:
+      - edge
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+
+  collector:
+    build:
+      context: ./apps/collector
+    image: recflow-collector:latest
+    container_name: recflow-collector
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      KPX_API_KEY: ${KPX_API_KEY}
+      KPX_BASE_URL: ${KPX_BASE_URL}
+      KPX_DAILY_BUDGET: ${KPX_DAILY_BUDGET}
+      FIXTURE_DIR: /app/fixtures
+      TZ: ${TZ}
+    volumes:
+      - collector_fixtures:/app/fixtures
+      - collector_samples:/app/api-samples
+    # 호스트 포트를 열지 않는다. 웹이 내부망으로만 호출한다.
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: recflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    # 운영에서는 호스트 포트를 절대 열지 않는다.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  db-backup:
+    build:
+      context: ./infra/backup
+    image: recflow-backup:latest
+    container_name: recflow-backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY}
+      TZ: ${TZ}
+    volumes:
+      - ./infra/backup/dumps:/dumps
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
+  collector_fixtures:
+  collector_samples:
+
+networks:
+  edge:
+    name: edge
+    external: true
+  internal:
+    name: recflow-internal
