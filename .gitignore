@@ -16,6 +16,9 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# collector가 생성하는 fixture (seed로 재현 가능)
+apps/collector/fixtures/
+
 # 백업 산출물
 infra/backup/dumps/
 
