@@ -313,7 +313,31 @@ docker run --rm --network recflow-internal \
   node:24-slim sh -c "npm i -g prisma@6.19.3 && prisma migrate deploy --schema /prisma/schema.prisma"
 ```
 
-### 6.3 백업
+### 6.3 로그인 비밀번호 변경
+
+```bash
+cd ~/recflow
+./infra/scripts/change-password.sh
+```
+
+새 비밀번호를 생성해 `.env`를 고치고 웹 컨테이너만 다시 만든다. 수집기와 DB는 건드리지 않으므로
+수집이 끊기지 않는다. 직접 지정하려면 `--set '원하는값'`을 쓴다.
+
+**비밀번호만 바꾸면 접속 중이던 사람은 최대 12시간 그대로 들어와 있다.** 세션 쿠키는
+`AUTH_SECRET`으로 서명된 것이라 비밀번호와 무관하기 때문이다. 유출이 의심되면 서명키까지
+바꿔 전원을 즉시 로그아웃시킨다.
+
+```bash
+./infra/scripts/change-password.sh --with-secret
+```
+
+> 이 시스템은 비밀번호 하나를 여러 사람이 공유한다. 바꾸면 나머지도 전부 다시 로그인해야
+> 하므로 **미리 알리고 바꾼다.** 개인별로 끊고 싶다면 그건 사용자 계정 기능이 필요한 것이며
+> 지금 설계에는 없다.
+
+이전 설정은 `.env.bak.<시각>`으로 백업되므로 되돌릴 수 있다.
+
+### 6.4 백업
 
 매일 02:00에 자동 실행된다.
 
@@ -338,7 +362,7 @@ docker compose -f docker-compose.prod.yml exec db psql -U recflow -d recflow_res
 docker compose -f docker-compose.prod.yml exec db dropdb -U recflow recflow_restore_test
 ```
 
-### 6.4 복구
+### 6.5 복구
 
 ```bash
 cd ~/recflow
