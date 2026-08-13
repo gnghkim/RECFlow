@@ -719,33 +719,51 @@ Expected: `백업 완료`와 파일 크기가 출력된다. `could not translate
 
 파일이 생겼다는 것만으로는 부족하다. **실제로 복구 가능한 내용인지** 확인한다.
 
+이미지에 `ENTRYPOINT`가 있으므로 `--entrypoint sh`로 덮어써야 한다. 붙이지 않으면 뒤의 명령이
+인자로만 전달되고 잠자기 루프가 돌아 아무 검증도 되지 않는다.
+
 ```powershell
 $dump = Get-ChildItem infra\backup\dumps\daily\*.sql.gz | Select-Object -First 1
 "파일: $($dump.Name)  크기: $([math]::Round($dump.Length/1KB,1))KB"
-docker run --rm -v "${PWD}\infra\backup\dumps:/dumps" recflow-backup:test sh -c "gunzip -c /dumps/daily/$($dump.Name) | grep -c 'INSERT INTO\|COPY '"
-docker run --rm -v "${PWD}\infra\backup\dumps:/dumps" recflow-backup:test sh -c "gunzip -c /dumps/daily/$($dump.Name) | grep -o 'CREATE TABLE public\.[a-z_]*'"
+docker run --rm --entrypoint sh -v "${PWD}\infra\backup\dumps:/dumps" recflow-backup:test -c "gunzip -c /dumps/daily/$($dump.Name) | grep -c 'INSERT INTO\|COPY '"
+docker run --rm --entrypoint sh -v "${PWD}\infra\backup\dumps:/dumps" recflow-backup:test -c "gunzip -c /dumps/daily/$($dump.Name) | grep -o 'CREATE TABLE public\.[a-z_]*'"
 ```
 
 Expected: `rec_market`을 포함한 테이블 7개의 `CREATE TABLE`이 보이고, 데이터 구문이 0보다 크다. 스키마만 있고 데이터가 없으면 `pg_dump` 옵션이 잘못된 것이다.
 
 - [ ] **Step 7: 보관정책 검증**
 
+> **격리된 디렉터리에서 시험한다.** 보관정책은 `ls -1t`로 **mtime** 순서를 본다. 이름만 과거
+> 날짜인 빈 파일은 mtime이 방금이라 최신으로 취급되고, Step 6에서 만든 **진짜 덤프가 가장
+> 오래된 것으로 판정되어 삭제된다.** 검증이 검증 대상을 파괴하지 않도록 별도 경로를 마운트한다.
+>
+> 보관정책 로직 자체는 바꾸지 않는다. 운영에서는 백업이 시간 순으로 생기므로 mtime 순서와
+> 이름 순서가 일치한다. 테스트를 쉽게 하려고 운영 로직을 바꾸는 것은 순서가 뒤바뀐 일이다.
+
 ```powershell
-# 오래된 파일 10개를 만들어 정리가 도는지 본다
-1..10 | ForEach-Object { $d = (Get-Date).AddDays(-$_).ToString('yyyyMMdd'); New-Item -ItemType File -Force "infra\backup\dumps\daily\recflow-$d-0200.sql.gz" | Out-Null }
-"정리 전: $((Get-ChildItem infra\backup\dumps\daily).Count)개"
+# 실제 덤프와 분리된 경로에서 시험한다
+New-Item -ItemType Directory -Force infra\backup\retention-test\daily | Out-Null
+1..10 | ForEach-Object { $d = (Get-Date).AddDays(-$_).ToString('yyyyMMdd'); New-Item -ItemType File -Force "infra\backup\retention-test\daily\recflow-$d-0200.sql.gz" | Out-Null }
+"정리 전: $((Get-ChildItem infra\backup\retention-test\daily).Count)개"
 $pgpw = ((Get-Content .env | Where-Object { $_ -like 'POSTGRES_PASSWORD=*' }) -split '=',2)[1].Trim()
 $devNetwork = (docker inspect recflow-db --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')
-docker run --rm --network $devNetwork -e POSTGRES_HOST=db -e POSTGRES_USER=recflow -e POSTGRES_DB=recflow -e PGPASSWORD=$pgpw -e BACKUP_KEEP_DAILY=7 -v "${PWD}\infra\backup\dumps:/dumps" --entrypoint /usr/local/bin/backup.sh recflow-backup:test | Select-String -Pattern '정리'
-"정리 후: $((Get-ChildItem infra\backup\dumps\daily).Count)개 (7개여야 정상)"
+docker run --rm --network $devNetwork -e POSTGRES_HOST=db -e POSTGRES_USER=recflow -e POSTGRES_DB=recflow -e PGPASSWORD=$pgpw -e BACKUP_KEEP_DAILY=7 -v "${PWD}\infra\backup\retention-test:/dumps" --entrypoint /usr/local/bin/backup.sh recflow-backup:test | Select-String -Pattern '정리'
+"정리 후: $((Get-ChildItem infra\backup\retention-test\daily).Count)개 (7개여야 정상)"
+"`n남은 파일과 크기:"
+Get-ChildItem infra\backup\retention-test\daily | ForEach-Object { "  $($_.Name)  $($_.Length)B" }
 ```
 
 Expected: 정리 후 7개가 남는다.
+
+**개수만 세지 말고 무엇이 지워졌는지 확인한다.** 남은 목록에 새로 만든 진짜 덤프(크기 > 0)가
+있어야 하고, 지워진 것은 전부 빈 파일이어야 한다. 크기가 0이 아닌 파일이 사라졌다면 로직에
+문제가 있는 것이다.
 
 - [ ] **Step 8: 검증 산출물 정리**
 
 ```powershell
 Remove-Item -Recurse -Force infra\backup\dumps -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force infra\backup\retention-test -ErrorAction SilentlyContinue
 ```
 
 - [ ] **Step 9: 커밋**
