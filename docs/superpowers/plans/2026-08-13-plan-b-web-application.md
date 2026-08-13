@@ -180,6 +180,8 @@ PostgreSQL numeric
 
 - [ ] **Step 3: TypeScript 설정**
 
+> **Next는 빌드할 때 이 파일의 일부 필드를 스스로 관리한다.** `jsx` 값과 `include`의 생성 타입 경로가 그렇다. 첫 `npm run build` 후 아래 내용과 달라져 있어도 **되돌리지 말고 그대로 커밋한다.** 되돌리면 다음 빌드가 다시 바꾸므로 무한 반복이 된다.
+
 `apps/web/tsconfig.json`:
 
 ```json
@@ -211,16 +213,30 @@ PostgreSQL numeric
 `apps/web/next.config.ts`:
 
 ```ts
+import { existsSync } from 'node:fs'
+import path from 'node:path'
 import type { NextConfig } from 'next'
+
+// Next는 자신의 프로젝트 루트(apps/web)에서만 .env를 찾는다. 이 저장소는
+// 루트 .env가 단일 진실 원천이고 Prisma CLI와 collector compose도 같은
+// 파일을 쓰므로, 비밀값을 복제하지 않고 여기서 명시적으로 읽는다.
+// next.config.ts는 서버 기동 전에 평가되므로 Route Handler, Server
+// Component, proxy 모두 process.env를 볼 수 있다.
+const rootEnv = path.resolve(process.cwd(), '../../.env')
+if (existsSync(rootEnv)) {
+  process.loadEnvFile(rootEnv)
+}
 
 const nextConfig: NextConfig = {
   output: 'standalone',
   // 계획 C의 Docker 이미지를 위해 리포 루트를 추적 기준으로 삼는다.
-  outputFileTracingRoot: process.cwd() + '/../..',
+  outputFileTracingRoot: path.resolve(process.cwd(), '../..'),
 }
 
 export default nextConfig
 ```
+
+`process.loadEnvFile`은 Node 20.12+ 내장이므로 `dotenv` 의존성이 필요 없다.
 
 `apps/web/postcss.config.mjs` — Tailwind 4는 별도 PostCSS 플러그인 패키지를 쓴다. v3의 `tailwind.config.js`는 만들지 않는다.
 
@@ -431,7 +447,7 @@ Tailwind 4는 tailwind.config.js가 아니라 CSS의 @import와
 `apps/web/lib/auth.test.ts`:
 
 ```ts
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const SECRET = 'test-secret-that-is-at-least-32-characters-long'
 
@@ -473,8 +489,11 @@ describe('세션 토큰', () => {
     const { createSessionToken } = await loadAuth()
     const token = await createSessionToken()
 
+    // 쿼리 접미사(./auth?other)로 캐시를 우회하면 TypeScript가 TS2307을 낸다.
+    // 모듈 캐시를 비우고 다시 불러온다.
+    vi.resetModules()
     process.env.AUTH_SECRET = 'a-completely-different-secret-key-32chars'
-    const fresh = await import('./auth?other')
+    const fresh = await import('./auth')
     expect(await fresh.verifySessionToken(token)).toBe(false)
   })
 })
@@ -507,7 +526,7 @@ describe('비밀번호 검증', () => {
 })
 ```
 
-`import('./auth?other')`가 Vitest에서 모듈 캐시를 우회하지 못하면 `vi.resetModules()`를 쓰도록 바꾸어라. 검증하려는 성질은 "다른 키로 서명된 토큰은 거부된다"이다.
+검증하려는 성질은 "다른 키로 서명된 토큰은 거부된다"이다. 이 테스트가 없으면 `AUTH_SECRET`을 교체해도 기존 세션이 그대로 유효한 문제를 잡지 못한다.
 
 - [ ] **Step 2: 레이트리밋 테스트 작성**
 
