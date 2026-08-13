@@ -157,28 +157,71 @@ Caddy 로그에 인증서 발급 성공이 보이고 `200`이 나와야 한다.
 
 ## 5. 데이터 적재
 
-### 5.1 API 키가 있을 때
+이 API는 날짜 필터를 지원하지 않는다. 한 번 호출하면 2017년부터 최신 거래일까지 전체
+이력(2026-08-13 기준 915 거래일)을 받는다. 그래서 별도 백필 절차가 없고 `collect` 한 번이
+곧 전체 적재다.
+
+### 5.1 최초 적재
 
 ```bash
-# 실제 응답 필드 확인
-docker compose -f docker-compose.prod.yml exec collector python -m cli probe --date 20260813
+cd /opt/recflow
 
-# 필드가 다르면 apps/collector/rec/mapping.py 수정 후 재빌드
-docker compose -f docker-compose.prod.yml up -d --build collector
+# 응답 필드가 우리가 확정한 것과 같은지 먼저 확인한다
+docker compose -f docker-compose.prod.yml exec collector python -m cli probe
 
-# 과거 데이터 백필. 개발계정은 하루 100건 제한이라 며칠에 나뉜다.
-docker compose -f docker-compose.prod.yml exec collector \
-  python -m cli backfill --from 20230815 --to 20260813 --source api
+# 전체 이력 적재
+docker compose -f docker-compose.prod.yml exec collector python -m cli collect --source api
 ```
 
-예산이 소진되면 자동으로 멈추고 다음 실행에서 이어받는다. 매일 09:00 누락일 점검이
-남은 구간을 계속 채운다.
+`collect`가 `상태 SUCCESS / 거래일 915일 / 2745행 적재`처럼 출력하면 성공이다.
 
-### 5.2 API 키가 아직 없을 때
+`PARTIAL`이 나오면 값 검증에 걸린 항목이 있다는 뜻이다. 적재는 되었고 사유가 함께 출력되며
+`collection_runs.error_message`에도 남는다. `/admin` 화면에서 확인한다.
+
+### 5.2 응답 필드가 바뀌었을 때
+
+`probe`가 출력한 필드 목록이 `apps/collector/rec/mapping.py`의 상수와 다르면 그 파일만
+고친다. **다른 파일은 고칠 필요가 없어야 한다.**
+
+```bash
+# 수정 후 재빌드
+docker compose -f docker-compose.prod.yml up -d --build collector
+```
+
+`probe` 원본은 컨테이너 안 `/app/api-samples/`에 저장된다. 꺼내려면:
+
+```bash
+docker compose -f docker-compose.prod.yml cp collector:/app/api-samples ./api-samples
+```
+
+### 5.3 정기 수집
+
+컨테이너가 상시 구동되며 아래 시각에 **매번 전체를 받아 UPSERT**한다. 중복이 생기지 않으므로
+여러 번 받아도 안전하고, 늦게 올라온 거래일도 자연히 채워진다.
+
+| 시각 (KST) | 작업 |
+|---|---|
+| 화·목 16:30 | 장 종료 직후 |
+| 화·목 18:00 | 같은 날 재확인 |
+| 매일 09:00 | 재수집 |
+
+> 공개 API에 당일 데이터가 올라오는 시각은 장 종료와 다를 수 있다. 2026-08-13(목) 19시에
+> 확인했을 때 최신 데이터가 아직 08-11(화)이었다. 실제로는 다음 날 아침 수집이 그날 데이터를
+> 잡을 가능성이 크다. 몇 주 운영해 보고 `apps/collector/jobs/scheduler.py`의 시각을 조정한다.
+
+### 5.4 API 키가 아직 없을 때
 
 수집기는 `KPX_API_KEY`가 비어 있으면 fixture 소스로 뜬다. 화면 확인용으로는 쓸 수 있지만
 **실제 시세가 아니다.** 운영에서는 키 발급 전까지 데이터를 넣지 않는 편이 낫다. fixture와
-실데이터가 섞이면 나중에 구분하기 어렵다. 구분이 필요하면 `rec_market.source` 열을 본다.
+실데이터가 섞이면 나중에 구분하기 어렵다. 구분이 필요하면 `rec_market.source` 열을 본다
+(`kpx-openapi` 대 `fixture`).
+
+fixture로 넣었던 데이터를 지우려면:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db \
+  psql -U recflow -d recflow -c "DELETE FROM rec_market WHERE source = 'fixture';"
+```
 
 ---
 
@@ -194,6 +237,16 @@ df -h
 ```
 
 웹의 `/admin` 화면에서 마지막 수집 시각과 최근 실행 이력을 볼 수 있다.
+
+데이터가 실제로 쌓이고 있는지는 DB에서 직접 확인한다.
+
+```bash
+docker compose -f docker-compose.prod.yml exec db psql -U recflow -d recflow -c \
+  "SELECT market_area, COUNT(*) AS days, MAX(trade_date) AS latest FROM rec_market GROUP BY market_area;"
+```
+
+구역 셋(`LAND`/`JEJU`/`TOTAL`)이 같은 일수를 갖고, `latest`가 최근 화·목이면 정상이다.
+`latest`가 일주일 이상 뒤처져 있으면 수집이 멎은 것이므로 `collection_runs`를 본다.
 
 ### 6.2 배포 갱신
 
@@ -291,3 +344,19 @@ ss -tlnp | grep -E '5432|8000'   # 아무것도 안 나와야 정상
 | 화면 숫자가 안 바뀜 | `app/(app)/layout.tsx`의 `force-dynamic`이 지워졌는지 확인 |
 | 수집이 안 돎 | 화·목이 아니면 정상이다. `/admin`의 최근 실행 이력과 `collection_runs`를 본다 |
 | 디스크 부족 | `docker system prune -a`, 오래된 덤프 정리 |
+
+### API 오류
+
+수집기 로그나 `collection_runs.error_message`에 나오는 것들이다.
+
+| 메시지 | 원인과 조치 |
+|---|---|
+| `NO_OPENAPI_SERVICE_ERROR` (`returnReasonCode=12`) | 엔드포인트 경로가 틀렸다. `getRecMarketInfo2`가 맞고 끝의 `2`가 빠지면 이 오류가 난다. `KPX_BASE_URL`을 확인한다 |
+| `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 인증키가 등록되지 않았거나 **Encoding 키**를 넣었다. 공공데이터포털 마이페이지의 **Decoding 키**를 쓴다 |
+| `LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS` | 일일 호출 한도 초과. 정상 운영에서는 하루 3회만 호출하므로 나오지 않는다. 수동 수집을 반복하지 않았는지 본다 |
+| `필수 필드 '...'가 응답에 없다` | API 응답 필드가 바뀌었다. `probe`로 실제 필드를 확인하고 `rec/mapping.py`만 고친다 (5.2절) |
+| 상태가 계속 `PARTIAL` | 값 검증에 걸린 항목이 있다. 적재는 되었으므로 급하지 않다. `error_message`에 사유가 있다 |
+
+> **인증키가 로그에 보이면 안 된다.** 키는 URL 쿼리로 전달되므로 `httpx`의 INFO 로그에
+> 그대로 찍힌다. `rec/client.py`가 해당 로거를 WARNING으로 낮춰 막고 있다. 로그에서 키를
+> 발견했다면 그 설정이 지워진 것이고, 키를 재발급해야 한다.
