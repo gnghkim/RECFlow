@@ -27,6 +27,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      TEST_DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/recflow_test
       TZ: ${TZ}
     volumes:
       # 소스를 마운트해 이미지 재빌드 없이 테스트를 반복한다.

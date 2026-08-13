@@ -22,6 +22,17 @@
    npm run db:migrate
    ```
 
+### 테스트 DB 준비
+
+테스트는 개발 데이터를 보호하기 위해 이름이 `_test`로 끝나는 전용 데이터베이스에서만 실행된다. 최초 한 번 `recflow_test`를 만들고 같은 Prisma 스키마를 적용한다.
+
+```powershell
+$exists = docker exec recflow-db psql -U recflow -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = 'recflow_test';"; if ($exists -ne "1") { docker exec recflow-db psql -U recflow -d postgres -c "CREATE DATABASE recflow_test OWNER recflow;" }
+$testPassword = (Get-Content .env | Where-Object { $_ -like "POSTGRES_PASSWORD=*" }).Split("=", 2)[1]; $env:DATABASE_URL = "postgresql://recflow:${testPassword}@localhost:5432/recflow_test"; npx prisma migrate deploy --schema prisma/schema.prisma; Remove-Item Env:DATABASE_URL
+```
+
+`docker-compose.yml`의 `TEST_DATABASE_URL`은 테스트 fixture가 `recflow_test`만 비우도록 지정한다. `DATABASE_URL`은 수집기 CLI가 개발용 `recflow`에 백필할 때 사용한다.
+
 ## 수집기 사용법
 
 파이썬은 컨테이너(3.12) 안에서만 실행한다. 호스트에 가상환경을 만들지 않는다.
