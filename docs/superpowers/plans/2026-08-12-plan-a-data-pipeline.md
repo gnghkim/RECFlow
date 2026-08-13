@@ -2498,6 +2498,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 DEFAULT_FIXTURE_DIR = Path(__file__).parent / "fixtures"
+DEFAULT_SAMPLE_DIR = Path(__file__).parent / "api-samples"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2507,6 +2508,9 @@ class Config:
     kpx_base_url: str
     kpx_daily_budget: int
     fixture_dir: Path
+    # probe가 실제 API 응답을 덤프하는 위치. 컨테이너에서는 /app/api-samples이고
+    # 마운트를 통해 호스트의 apps/collector/api-samples로 이어진다.
+    sample_dir: Path
     collector_port: int
 
 
@@ -2529,6 +2533,7 @@ def load_config() -> Config:
         kpx_base_url=os.environ.get("KPX_BASE_URL", "https://apis.data.go.kr/B552115/RecMarketInfo2"),
         kpx_daily_budget=int(os.environ.get("KPX_DAILY_BUDGET", "80")),
         fixture_dir=Path(os.environ.get("FIXTURE_DIR", DEFAULT_FIXTURE_DIR)),
+        sample_dir=Path(os.environ.get("SAMPLE_DIR", DEFAULT_SAMPLE_DIR)),
         collector_port=int(os.environ.get("COLLECTOR_PORT", "8000")),
     )
 ```
@@ -2560,7 +2565,8 @@ from rec.fixture_client import FixtureClient, generate_fixtures
 from rec.repository import RecRepository
 from rec.service import CollectorService
 
-SAMPLE_DIR = Path(__file__).resolve().parents[2] / "docs" / "api-samples"
+# 모듈 수준에서 경로를 계산하지 않는다. import 시점 계산은 실행 환경(컨테이너 vs
+# 호스트)에 따라 깨진다. probe가 필요할 때 config.sample_dir을 쓴다.
 
 
 def parse_day(text: str) -> date:
@@ -2612,8 +2618,8 @@ def cmd_probe(args, config) -> int:
     client = build_source(config, "api")
     response = client.fetch(parse_day(args.date))
 
-    SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
-    target = SAMPLE_DIR / f"rec-{args.date}.json"
+    config.sample_dir.mkdir(parents=True, exist_ok=True)
+    target = config.sample_dir / f"rec-{args.date}.json"
     target.write_text(json.dumps(response.payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"원본 응답을 {target}에 저장했다.")
@@ -2685,7 +2691,7 @@ git commit -m "feat(collector): 서비스 조립과 CLI 추가
 검증 위반은 저장을 막지 않고 PARTIAL로 기록한다.
 빈 응답은 NO_DATA로 확정해 누락일 재시도를 멈춘다.
 
-probe 명령은 실 API 응답을 docs/api-samples에 덤프하고 실제 필드명을
+probe 명령은 실 API 응답을 apps/collector/api-samples에 덤프하고 실제 필드명을
 출력한다. 키 발급 직후 가장 먼저 실행할 명령이다."
 ```
 

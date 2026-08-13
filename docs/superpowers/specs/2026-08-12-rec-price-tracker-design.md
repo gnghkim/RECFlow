@@ -123,7 +123,6 @@ C:\Dev\RECFlow\
 ├─ .env.example
 ├─ README.md
 └─ docs/
-   ├─ api-samples/            probe 명령이 저장하는 실제 API 원본 응답
    ├─ deployment.md
    └─ superpowers/specs/
 ```
@@ -346,7 +345,7 @@ APScheduler를 collector 컨테이너 안에서 구동한다. 호스트 cron에 
 
 ```text
 python -m collector.cli probe --date YYYYMMDD
-    실제 API를 1회 호출하여 원본 응답을 docs/api-samples/rec-YYYYMMDD.json 에 저장하고
+    실제 API를 1회 호출하여 원본 응답을 apps/collector/api-samples/rec-YYYYMMDD.json 에 저장하고
     최상위 필드 목록을 출력한다. 키 발급 직후 가장 먼저 실행한다.
 
 python -m collector.cli collect --date YYYYMMDD [--source api|fixture]
