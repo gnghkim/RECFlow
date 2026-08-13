@@ -33,5 +33,24 @@ services:
       - ./apps/collector:/app
     command: ["python", "-m", "pytest", "-v"]
 
+  collector:
+    build: ./apps/collector
+    container_name: recflow-collector
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      KPX_API_KEY: ${KPX_API_KEY}
+      KPX_BASE_URL: ${KPX_BASE_URL}
+      KPX_DAILY_BUDGET: ${KPX_DAILY_BUDGET}
+      FIXTURE_DIR: /app/fixtures
+      TZ: ${TZ}
+    volumes:
+      - collector_fixtures:/app/fixtures
+    # 포트를 호스트에 노출하지 않는다. 내부 네트워크 전용이다.
+
 volumes:
   postgres_data:
+  collector_fixtures:
