@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseDateField, parseDecimalField, parsePositiveInt } from '@/lib/validate'
+import { DECIMAL_LIMITS, parseDateField, parseDecimalField, parsePositiveInt } from '@/lib/validate'
 
 export async function GET() {
   const rows = await prisma.recSale.findMany({
@@ -32,10 +32,10 @@ export async function POST(request: Request) {
   const saleDate = parseDateField(body.saleDate, '매각일')
   if (!saleDate.ok) return NextResponse.json({ error: saleDate.error }, { status: 400 })
 
-  const quantity = parseDecimalField(body.quantity, '매각 수량')
+  const quantity = parseDecimalField(body.quantity, '매각 수량', { max: DECIMAL_LIMITS.quantity })
   if (!quantity.ok) return NextResponse.json({ error: quantity.error }, { status: 400 })
 
-  const unitPrice = parseDecimalField(body.unitPrice, '단가')
+  const unitPrice = parseDecimalField(body.unitPrice, '단가', { max: DECIMAL_LIMITS.price })
   if (!unitPrice.ok) return NextResponse.json({ error: unitPrice.error }, { status: 400 })
 
   const [issuedAgg, soldAgg] = await Promise.all([
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   }
 
   const amount = body.saleAmount
-    ? parseDecimalField(body.saleAmount, '매각금액')
+    ? parseDecimalField(body.saleAmount, '매각금액', { max: DECIMAL_LIMITS.amount })
     : { ok: true as const, value: requested.mul(new Decimal(unitPrice.value)).toString() }
   if (!amount.ok) return NextResponse.json({ error: amount.error }, { status: 400 })
 

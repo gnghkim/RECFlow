@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDateField, parseDecimalField, parsePositiveInt } from './validate'
+import { DECIMAL_LIMITS, parseDateField, parseDecimalField, parsePositiveInt } from './validate'
 
 describe('parseDecimalField', () => {
   it('숫자 문자열을 통과시킨다', () => {
@@ -28,6 +28,38 @@ describe('parseDecimalField', () => {
 
   it('0은 허용한다', () => {
     expect(parseDecimalField('0', '수량').ok).toBe(true)
+  })
+})
+
+describe('parseDecimalField 자릿수 한계', () => {
+  it('컬럼 한계를 넘으면 거부하고 한계를 알려준다', () => {
+    // rec_weight 는 Decimal(4,2) 라 99.99 가 최대다. 넘기면 DB가 500으로 터진다.
+    const result = parseDecimalField('1000', 'REC 가중치', { max: DECIMAL_LIMITS.weight })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('REC 가중치')
+      expect(result.error).toContain('99.99')
+    }
+  })
+
+  it('한계값 자체는 허용한다', () => {
+    expect(parseDecimalField('99.99', 'REC 가중치', { max: DECIMAL_LIMITS.weight }).ok).toBe(true)
+  })
+
+  it('한계를 지정하지 않으면 검사하지 않는다', () => {
+    expect(parseDecimalField('999999', '수량').ok).toBe(true)
+  })
+
+  it('큰 금액 한계도 동작한다', () => {
+    expect(parseDecimalField('1e20', '매각금액', { max: DECIMAL_LIMITS.amount }).ok).toBe(false)
+    expect(parseDecimalField('999999999999999', '매각금액', { max: DECIMAL_LIMITS.amount }).ok).toBe(true)
+  })
+
+  it('소수 자릿수가 많으면 반올림해서 받는다', () => {
+    // Postgres 가 어차피 scale 2 로 반올림한다. 오류로 막을 이유가 없다.
+    const result = parseDecimalField('1.005', 'REC 가중치', { max: DECIMAL_LIMITS.weight })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value).toBe('1.01')
   })
 })
 

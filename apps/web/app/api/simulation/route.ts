@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { simulate, simulateTranches } from '@/lib/analytics/simulation'
-import { parseDecimalField } from '@/lib/validate'
+import { DECIMAL_LIMITS, parseDecimalField } from '@/lib/validate'
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
@@ -12,9 +12,9 @@ export async function POST(request: Request) {
 
     for (const [index, item] of raw.entries()) {
       const entry = item as Record<string, unknown>
-      const quantity = parseDecimalField(entry.quantity, `${index + 1}차 수량`)
+      const quantity = parseDecimalField(entry.quantity, `${index + 1}차 수량`, { max: DECIMAL_LIMITS.quantity })
       if (!quantity.ok) return NextResponse.json({ error: quantity.error }, { status: 400 })
-      const price = parseDecimalField(entry.price, `${index + 1}차 가격`)
+      const price = parseDecimalField(entry.price, `${index + 1}차 가격`, { max: DECIMAL_LIMITS.price })
       if (!price.ok) return NextResponse.json({ error: price.error }, { status: 400 })
       tranches.push({ quantity: quantity.value, price: price.value })
     }
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json(simulateTranches(tranches))
   }
 
-  const quantity = parseDecimalField(body.quantity, '보유량')
+  const quantity = parseDecimalField(body.quantity, '보유량', { max: DECIMAL_LIMITS.quantity })
   if (!quantity.ok) return NextResponse.json({ error: quantity.error }, { status: 400 })
 
   const prices = Array.isArray(body.prices) ? body.prices.map((price) => String(price)) : []

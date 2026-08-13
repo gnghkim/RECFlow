@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseDateField, parseDecimalField, parsePositiveInt } from '@/lib/validate'
+import { DECIMAL_LIMITS, parseDateField, parseDecimalField, parsePositiveInt } from '@/lib/validate'
 
 export async function GET() {
   const rows = await prisma.recInventory.findMany({
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   const issueDate = parseDateField(body.issueDate, '발급일')
   if (!issueDate.ok) return NextResponse.json({ error: issueDate.error }, { status: 400 })
 
-  const quantity = parseDecimalField(body.recQuantity, '발급 REC')
+  const quantity = parseDecimalField(body.recQuantity, '발급 REC', { max: DECIMAL_LIMITS.quantity })
   if (!quantity.ok) return NextResponse.json({ error: quantity.error }, { status: 400 })
 
   const created = await prisma.recInventory.create({

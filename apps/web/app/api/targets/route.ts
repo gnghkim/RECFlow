@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseDecimalField } from '@/lib/validate'
+import { DECIMAL_LIMITS, parseDecimalField } from '@/lib/validate'
 
 export async function GET() {
   const targets = await prisma.priceTarget.findMany({ orderBy: { targetPrice: 'asc' } })
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const name = String(body.name ?? '').trim()
   if (name.length === 0) return NextResponse.json({ error: '이름을 입력하세요.' }, { status: 400 })
 
-  const price = parseDecimalField(body.targetPrice, '목표가격')
+  const price = parseDecimalField(body.targetPrice, '목표가격', { max: DECIMAL_LIMITS.price })
   if (!price.ok) return NextResponse.json({ error: price.error }, { status: 400 })
 
   const created = await prisma.priceTarget.create({

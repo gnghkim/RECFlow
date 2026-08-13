@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { parseDecimalField } from '@/lib/validate'
+import { DECIMAL_LIMITS, parseDecimalField } from '@/lib/validate'
 
 export async function GET() {
   const plants = await prisma.plant.findMany({ orderBy: { name: 'asc' } })
@@ -23,10 +23,14 @@ export async function POST(request: Request) {
   const name = String(body.name ?? '').trim()
   if (name.length === 0) return NextResponse.json({ error: '발전소명을 입력하세요.' }, { status: 400 })
 
-  const capacity = body.capacityKw ? parseDecimalField(body.capacityKw, '설비용량') : null
+  const capacity = body.capacityKw
+    ? parseDecimalField(body.capacityKw, '설비용량', { max: DECIMAL_LIMITS.price })
+    : null
   if (capacity && !capacity.ok) return NextResponse.json({ error: capacity.error }, { status: 400 })
 
-  const weight = body.recWeight ? parseDecimalField(body.recWeight, 'REC 가중치') : null
+  const weight = body.recWeight
+    ? parseDecimalField(body.recWeight, 'REC 가중치', { max: DECIMAL_LIMITS.weight })
+    : null
   if (weight && !weight.ok) return NextResponse.json({ error: weight.error }, { status: 400 })
 
   const plant = await prisma.plant.create({
