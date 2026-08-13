@@ -76,11 +76,10 @@ VPS IP가 나와야 한다. **DNS가 맞기 전에 Caddy를 띄우면 Let's Encr
 ## 3. 코드와 환경변수
 
 ```bash
-sudo mkdir -p /opt/recflow
-sudo chown recflow:recflow /opt/recflow
-cd /opt
+# /opt 는 root 소유라 일반 계정이 쓸 수 없다. 홈 아래에 둔다.
+cd ~
 git clone https://github.com/gnghkim/RECFlow.git recflow
-cd /opt/recflow
+cd ~/recflow
 
 cp .env.prod.example .env
 ```
@@ -107,23 +106,38 @@ chmod 600 .env
 
 ## 4. 최초 기동
 
-### 4.1 공유 네트워크
+### 4.1 공유 네트워크 확인
+
+이 스택은 리버스 프록시를 소유하지 않는다. 공용 Caddy가 쓰는 네트워크에 합류만 한다.
 
 ```bash
-docker network create edge
+docker network ls | grep -w web
 ```
 
-향후 다른 사내 서비스도 이 네트워크에 합류시킨다.
+없으면 만든다. 이미 있으면 **건드리지 않는다.**
+
+```bash
+docker network create web
+```
 
 ### 4.2 빌드와 기동
 
 ```bash
-cd /opt/recflow
+cd ~/recflow
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps
 ```
 
-다섯 서비스가 모두 `Up`이고 `db`가 `healthy`인지 본다.
+네 서비스(`web`, `collector`, `db`, `db-backup`)가 모두 `Up`이고 `db`가 `healthy`인지 본다.
+`PORTS` 칸에 호스트 매핑이 하나도 없어야 정상이다.
+
+기존 서비스가 영향받지 않았는지도 확인한다.
+
+```bash
+docker ps --format "{{.Names}}|{{.Status}}" | grep -v recflow
+curl -s -o /dev/null -w "%{http_code}
+" https://reports.ktgobiz.co.kr/
+```
 
 ### 4.3 스키마 적용
 
@@ -131,8 +145,8 @@ DB 포트가 닫혀 있으므로 컨테이너 안에서 실행한다.
 
 ```bash
 docker run --rm --network recflow-internal \
-  -v /opt/recflow/prisma:/prisma \
-  -e DATABASE_URL="$(grep '^DATABASE_URL=' /opt/recflow/.env | cut -d= -f2-)" \
+  -v ~/recflow/prisma:/prisma \
+  -e DATABASE_URL="$(grep '^DATABASE_URL=' ~/recflow/.env | cut -d= -f2-)" \
   node:24-slim sh -c "npm i -g prisma@6.19.3 && prisma migrate deploy --schema /prisma/schema.prisma"
 ```
 
@@ -144,14 +158,51 @@ docker compose -f docker-compose.prod.yml exec db psql -U recflow -d recflow -c 
 
 테이블 8개가 보여야 한다.
 
-### 4.4 HTTPS 확인
+### 4.4 공용 Caddy에 사이트 추가
+
+이 스택은 Caddy를 소유하지 않는다. 서버의 공용 Caddy(`/opt/caddy/Caddyfile`)에 블록을 추가한다.
+
+> **DNS가 먼저다.** `rec.<회사도메인>`이 VPS IP로 해석되지 않는 상태에서 블록을 추가하면
+> Let's Encrypt 발급이 실패하고 일정 시간 재시도가 제한된다. 2장을 먼저 끝낸다.
+
+먼저 웹 컨테이너가 Caddy에서 보이는지 확인한다.
 
 ```bash
-docker compose -f docker-compose.prod.yml logs caddy --tail 30
+docker exec caddy-caddy-1 wget -q -O- --timeout=8 http://recflow-web:3000/login | head -c 60
+```
+
+HTML이 나오면 연결된 것이다. 그 다음 블록을 추가한다.
+
+```bash
+cat >> /opt/caddy/Caddyfile <<'EOF'
+
+# BEGIN RECFLOW
+rec.ktgobiz.co.kr {
+	encode zstd gzip
+	reverse_proxy recflow-web:3000
+}
+# END RECFLOW
+EOF
+```
+
+**설정만 다시 읽는다.** 컨테이너를 재시작하면 같은 Caddy를 쓰는 다른 서비스도 잠깐 끊긴다.
+
+```bash
+docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+```
+
+확인:
+
+```bash
+docker logs caddy-caddy-1 --tail 20
 curl -I https://rec.<회사도메인>/login
 ```
 
-Caddy 로그에 인증서 발급 성공이 보이고 `200`이 나와야 한다.
+인증서 발급 로그가 보이고 `200`이 나와야 한다. 기존 사이트도 함께 확인한다.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://reports.ktgobiz.co.kr/
+```
 
 ---
 
@@ -164,7 +215,7 @@ Caddy 로그에 인증서 발급 성공이 보이고 `200`이 나와야 한다.
 ### 5.1 최초 적재
 
 ```bash
-cd /opt/recflow
+cd ~/recflow
 
 # 응답 필드가 우리가 확정한 것과 같은지 먼저 확인한다
 docker compose -f docker-compose.prod.yml exec collector python -m cli probe
@@ -251,13 +302,13 @@ docker compose -f docker-compose.prod.yml exec db psql -U recflow -d recflow -c 
 ### 6.2 배포 갱신
 
 ```bash
-cd /opt/recflow
+cd ~/recflow
 git pull
 docker compose -f docker-compose.prod.yml up -d --build
 
 # 스키마 변경이 있었다면
 docker run --rm --network recflow-internal \
-  -v /opt/recflow/prisma:/prisma \
+  -v ~/recflow/prisma:/prisma \
   -e DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" \
   node:24-slim sh -c "npm i -g prisma@6.19.3 && prisma migrate deploy --schema /prisma/schema.prisma"
 ```
@@ -267,7 +318,7 @@ docker run --rm --network recflow-internal \
 매일 02:00에 자동 실행된다.
 
 ```bash
-ls -lh /opt/recflow/infra/backup/dumps/daily
+ls -lh ~/recflow/infra/backup/dumps/daily
 docker compose -f docker-compose.prod.yml logs db-backup --tail 20
 
 # 수동 실행
@@ -290,7 +341,7 @@ docker compose -f docker-compose.prod.yml exec db dropdb -U recflow recflow_rest
 ### 6.4 복구
 
 ```bash
-cd /opt/recflow
+cd ~/recflow
 ./infra/scripts/restore.sh infra/backup/dumps/daily/<파일>.sql.gz
 ```
 
