@@ -2456,7 +2456,16 @@ export function PriceChart({ data, height = 320 }: { data: PriceSeriesPoint[]; h
             borderRadius: 8,
             fontSize: 12,
           }}
-          formatter={(value: number, name: string) => [`${value.toLocaleString('ko-KR')}원`, name]}
+          // Recharts 3의 formatter는 ValueType(문자열·배열 가능)을 준다.
+          // 명시적 : number 를 쓰면 TS2322가 난다. 좁힌 뒤 유한성을 확인한다.
+          // Number(null)은 0이므로 유한성 검사를 빼면 값 없음이 0원으로 보인다.
+          formatter={(value, name) => {
+            const numeric = typeof value === 'number' ? value : Number(value)
+            return [
+              Number.isFinite(numeric) ? `${numeric.toLocaleString('ko-KR')}원` : '—',
+              name,
+            ]
+          }}
         />
         {LINES.map((line) => (
           <Line
@@ -2518,6 +2527,14 @@ export function AppNav() {
 
 ```tsx
 import { AppNav } from '@/components/app-nav'
+
+// 이 아래 모든 화면이 DB에서 현재 시세와 보유 현황을 읽는다. Prisma 조회는
+// Next의 동적 신호가 아니라서 그냥 두면 빌드 시점 값으로 정적 렌더링되고,
+// 배포 후 수집이 돌아도 화면 숫자가 갱신되지 않는다. 가격추적 시스템에서
+// 낡은 숫자는 화면이 멀쩡해 보이는 만큼 위험하다.
+// 레이아웃의 route segment config는 하위 세그먼트 전체에 적용되므로
+// 앞으로 추가할 화면도 자동으로 동적이 된다.
+export const dynamic = 'force-dynamic'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -2873,7 +2890,13 @@ export function VolumeChart({
             borderRadius: 8,
             fontSize: 12,
           }}
-          formatter={(value: number) => [`${value.toLocaleString('ko-KR')} REC`, '거래량']}
+          formatter={(value) => {
+            const numeric = typeof value === 'number' ? value : Number(value)
+            return [
+              Number.isFinite(numeric) ? `${numeric.toLocaleString('ko-KR')} REC` : '—',
+              '거래량',
+            ]
+          }}
         />
         <Bar dataKey="volume" fill="var(--color-accent)" isAnimationActive={false} />
       </BarChart>
@@ -4492,7 +4515,7 @@ import { CollectButton } from './collect-button'
 import { getCollectionSummary, getRecentRuns } from '@/lib/queries/collection'
 import { DASH } from '@/lib/money'
 
-export const dynamic = 'force-dynamic'
+// dynamic 설정은 (app)/layout.tsx가 하위 전체에 적용하므로 여기 다시 쓰지 않는다.
 
 const STATUS_TONE: Record<string, 'neutral' | 'up' | 'down'> = {
   SUCCESS: 'neutral',
