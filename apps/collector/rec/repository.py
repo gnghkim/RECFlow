@@ -68,7 +68,14 @@ class RecRepository:
         attempts: int,
         rows_upserted: int,
         error_message: str | None = None,
+        target_date: date | None = None,
     ) -> None:
+        """실행을 마감한다.
+
+        target_date는 이 실행이 확보한 최신 거래일이다. 시작 시점에는 알 수 없고
+        (날짜 필터가 없는 API라 무엇이 올지 모른다) 수집 후에야 정해진다.
+        관리자 화면이 마지막 수집이 어디까지 받았는지 보여주는 데 쓴다.
+        """
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -77,10 +84,11 @@ class RecRepository:
                        attempts = %s,
                        rows_upserted = %s,
                        error_message = %s,
+                       target_date = COALESCE(%s, target_date),
                        finished_at = NOW()
                  WHERE id = %s
                 """,
-                (status, attempts, rows_upserted, error_message, run_id),
+                (status, attempts, rows_upserted, error_message, target_date, run_id),
             )
 
     def last_successful_run(self) -> dict | None:
@@ -98,16 +106,22 @@ class RecRepository:
 
     # --- 원본 보존 --------------------------------------------------------
 
-    def save_raw(self, run_id: int, response: ApiResponse) -> int:
+    def save_raw(self, run_id: int, response: ApiResponse, trade_date: date | None = None) -> int:
+        """원본을 저장한다.
+
+        응답 하나가 여러 거래일을 담으므로 trade_date는 그 스냅샷의 최신 거래일을 뜻한다.
+        매핑이 실패해 거래일을 알 수 없는 경우에는 스키마상 NOT NULL이므로 오늘 날짜를 넣는다.
+        그때도 fetched_at과 payload가 남아 재처리가 가능하다.
+        """
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO rec_market_raw (trade_date, endpoint, http_status, payload, fetched_at, collection_run_id)
-                VALUES (%s, %s, %s, %s, NOW(), %s)
+                VALUES (COALESCE(%s, CURRENT_DATE), %s, %s, %s, NOW(), %s)
                 RETURNING id
                 """,
                 (
-                    response.trade_date,
+                    trade_date,
                     response.endpoint,
                     response.http_status,
                     Jsonb(response.payload),

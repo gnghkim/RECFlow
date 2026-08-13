@@ -1,41 +1,55 @@
-from datetime import date
+import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from api import create_app
-from rec.fixture_client import FixtureClient, generate_fixtures
+from rec.models import ApiResponse
 from rec.service import CollectorService
+from tests.conftest import make_response
+
+SAMPLES = Path(__file__).parent / "samples"
+
+
+class SampleSource:
+    source_name = "sample"
+
+    def fetch(self, page: int = 1) -> ApiResponse:
+        if page > 1:
+            return make_response()
+        payload = json.loads((SAMPLES / "rec_response_sample.json").read_text(encoding="utf-8"))
+        return ApiResponse(payload=payload, http_status=200, endpoint="sample://real")
 
 
 @pytest.fixture
-def client(repo, tmp_path):
-    generate_fixtures(tmp_path, date(2026, 7, 1), date(2026, 8, 6))
-    service = CollectorService(repo, FixtureClient(tmp_path))
+def client(repo):
+    service = CollectorService(repo, SampleSource())
     return TestClient(create_app(service=service, repository=repo))
 
 
 def test_health_reports_ok_with_no_runs(client):
-    response = client.get("/health")
-    assert response.status_code == 200
-    body = response.json()
+    body = client.get("/health").json()
     assert body["status"] == "ok"
     assert body["lastSuccessfulRun"] is None
 
 
 def test_health_reports_last_successful_run(client):
-    client.post("/jobs/collect", json={"tradeDate": "2026-08-06"})
+    client.post("/jobs/collect", json={})
     body = client.get("/health").json()
-    assert body["lastSuccessfulRun"]["targetDate"] == "2026-08-06"
+    assert body["lastSuccessfulRun"]["targetDate"] == "2026-08-11"
 
 
 def test_collect_job_returns_outcome(client):
-    response = client.post("/jobs/collect", json={"tradeDate": "2026-08-06"})
+    response = client.post("/jobs/collect", json={})
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "SUCCESS"
-    assert body["rowsUpserted"] == 3
+    assert body["rowsUpserted"] == 9
+    assert body["tradeDates"] == 3
+    assert body["latestTradeDate"] == "2026-08-11"
 
 
-def test_collect_job_rejects_bad_date(client):
-    assert client.post("/jobs/collect", json={"tradeDate": "not-a-date"}).status_code == 422
+def test_collect_job_accepts_empty_body(client):
+    """이 API는 날짜 필터가 없어 요청 본문이 필요 없다."""
+    assert client.post("/jobs/collect").status_code == 200

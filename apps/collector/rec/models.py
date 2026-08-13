@@ -16,9 +16,12 @@ class MarketArea(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ApiResponse:
-    """수집 소스가 돌려주는 원본 응답. client와 fixture_client의 공통 반환형."""
+    """수집 소스가 돌려주는 원본 응답. client와 fixture_client의 공통 반환형.
 
-    trade_date: date
+    거래일 필드가 없다. 이 API는 날짜 필터를 지원하지 않고 전체 이력을
+    페이징으로 돌려주므로, 응답 하나가 여러 거래일을 담는다.
+    """
+
     payload: dict
     http_status: int
     endpoint: str

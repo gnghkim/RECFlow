@@ -16,9 +16,9 @@ REC 현물시장은 매주 화·목요일에만 열린다. 오늘 수집하지 �
 | 계획 B | 웹 — 인증, 대시보드, 시장분석, 보유REC, 시뮬레이션, 관리 | **완료** |
 | 계획 C | 배포 — 운영 compose, Caddy, 자동백업 | **완료** |
 
-- 테스트 **180개** 통과 (수집기 68 · 웹 112)
-- fixture 기준 3년치(거래일 313일 × 육지/제주/합계 = 939행) 적재 검증 완료
-- 공공데이터포털 API 키는 아직 미발급 상태이며, 발급 시 [전환 절차](#api-키가-발급되면)를 따른다
+- 테스트 **199개** 통과 (수집기 87 · 웹 112)
+- **실 데이터 적재 완료**: 2017-05-30 ~ 2026-08-11, 거래일 **915일** × 육지/제주/합계 = 2,745행
+- 공공데이터포털 API 키 발급 및 연동 완료
 
 ---
 
@@ -65,6 +65,20 @@ dataclass로만 대화한다. 공공데이터포털의 응답 필드는 현재 �
 **값이 없는 것과 0을 구분한다.**
 종가와 거래금액은 육지·제주 통합값으로만 제공되므로 육지/제주 행에서는 `NULL`이다. 빈 문자열을
 0으로 바꾸면 이후 평균·이동평균·백분위가 조용히 틀어진다.
+
+**가격은 그날의 상하한가 안에 있을 때만 받아들인다.**
+API가 같은 응답에 `landLwlmtPrc`/`landUplmtPrc` 등 그날의 가격제한폭을 함께 준다. 915 거래일을
+전수 확인한 결과 육지는 한 번도 벗어나지 않았고, **제주는 평균가 620/885, 최고·최저가 799/915가
+제한폭 밖**이었다. 0원이나 상한가의 두 배 같은 값이 온다. 제주 거래량 비중은 1.8%다.
+
+한 구역의 가격 항목이 하나라도 제한폭을 벗어나면 그 구역의 가격을 **전부** 버린다. 일부만
+살리면 통합 평균가가 통합 최저가보다 낮아지는 모순이 생긴다. 거래량과 건수는 별개의 사실이므로
+그대로 남긴다. 원본은 `rec_market_raw`에 보존되므로 판단 근거는 사라지지 않는다.
+
+**API는 날짜 필터를 지원하지 않는다.**
+`tradeDay`를 보내도 무시하고 전체 이력을 페이징으로 준다. 그래서 수집 단위가 거래일이 아니라
+전체이고, 한 번 호출로 915일을 받는다. 매번 전체를 받아 UPSERT하므로 늦게 올라온 거래일도
+자연히 채워진다. 개발계정 하루 100건 제한이 사실상 문제가 되지 않는다.
 
 **스키마는 Prisma가 단독 소유한다.**
 Python 수집기는 어떤 DDL도 실행하지 않는다. 테이블 변경은 항상 Prisma 마이그레이션으로만 한다.
@@ -128,15 +142,22 @@ $testPassword = (Get-Content .env | Where-Object { $_ -like "POSTGRES_PASSWORD=*
 `docker-compose.yml`의 `TEST_DATABASE_URL`은 테스트가 `recflow_test`만 비우도록 지정한다.
 `DATABASE_URL`은 수집기 CLI가 개발용 `recflow`에 적재할 때 쓴다.
 
-### 3. 데이터 적재 (API 키 없이)
+### 3. 데이터 적재
+
+`.env`의 `KPX_API_KEY`에 공공데이터포털 **Decoding 키**를 넣고 실행한다. 한 번이면 전체
+이력(2017년~현재)이 적재된다.
+
+```powershell
+docker compose run --rm collector-test python -m cli collect --source api
+```
+
+API 키가 없을 때만 오프라인 확인용 fixture를 쓴다. `--source fixture`는 **HTTP 계층만**
+교체하므로 매핑·검증·UPSERT·이력 기록은 실제와 동일한 경로를 지난다.
 
 ```powershell
 docker compose run --rm collector-test python -m cli gen-fixture --years 3
-docker compose run --rm collector-test python -m cli backfill --from 20230812 --to 20260812 --source fixture
+docker compose run --rm collector-test python -m cli collect --source fixture
 ```
-
-`--source fixture`는 **HTTP 계층만** 교체한다. 매핑·검증·UPSERT·이력 기록은 실제와 동일한
-경로를 지나므로, fixture로 통과한 파이프라인은 키가 생겨도 그대로 동작한다.
 
 ### 4. 수집기 상시 구동
 
@@ -196,48 +217,41 @@ npm run build
 
 ---
 
-## API 키가 발급되면
+## 외부 API
 
-공공데이터포털 「한국전력거래소_REC 현물시장 정보」의 응답 필드 영문명은 공개 문서에 없다.
-추정하지 않고 실제 응답으로 확정한다.
+- 데이터셋: 공공데이터포털 [한국전력거래소_REC 현물시장 정보](https://www.data.go.kr/data/15099762/openapi.do)
+- 엔드포인트: `https://apis.data.go.kr/B552115/RecMarketInfo2/getRecMarketInfo2`
+- 인증키는 **Decoding 키**를 쓴다. Encoding 키를 넣으면 이중 인코딩되어 인증에 실패한다.
 
-1. `.env`의 `KPX_API_KEY`에 일반 인증키(Decoding)를 넣는다.
-2. 실제 응답을 덤프하고 필드명을 확인한다.
+응답 필드는 2026-08-13에 실제 호출로 확정했다. 샘플은
+`apps/collector/tests/samples/rec_response_sample.json`에 있고 매핑 테스트가 이 파일을 기준으로
+돈다. 추정값이 아니다.
 
-   ```powershell
-   docker compose run --rm collector-test python -m cli probe --date <최근 화요일 또는 목요일 YYYYMMDD>
-   ```
+응답 필드가 바뀌었는지 확인하려면:
 
-   원본은 `apps/collector/api-samples/`에 저장되고 실제 필드 목록이 출력된다.
+```powershell
+docker compose run --rm collector-test python -m cli probe
+```
 
-3. 출력에 맞게 `apps/collector/rec/mapping.py`의 `FIELD_MAP`과 `AREA_MAP`을 수정한다.
-   **다른 파일은 고칠 필요가 없어야 한다.**
-4. `apps/collector/tests/samples/rec_response_sample.json`을 실제 응답으로 교체하고 테스트를 다시 돌린다.
-5. fixture 데이터를 지우고 실 데이터로 백필한다.
+원본이 `apps/collector/api-samples/`에 저장되고 실제 필드 목록과 매핑 결과가 출력된다. 필드가
+달라졌다면 `apps/collector/rec/mapping.py`의 필드명 상수만 고치면 된다. **다른 파일은 고칠
+필요가 없어야 한다.**
 
-   ```powershell
-   docker exec recflow-db psql -U recflow -d recflow -c "DELETE FROM rec_market WHERE source = 'fixture';"
-   docker compose run --rm collector-test python -m cli backfill --from <시작일> --to <종료일> --source api
-   ```
-
-개발계정은 **하루 100건**으로 제한되므로 3년치 백필은 며칠에 나뉘어 진행된다. 수집기는 하루
-80건에서 스스로 멈추고 다음 실행에서 남은 구간부터 이어받는다.
-
-> 데이터 축적을 웹 완성까지 미루지 말 것. 키가 나오는 즉시 수집기와 DB만 먼저 배포해
-> 시세를 쌓기 시작하고, 웹은 병행 개발한다. 미룬 기간만큼의 거래일은 영구히 잃는다.
+> 인증키는 URL 쿼리로 전달되므로 `httpx`의 INFO 로그에 그대로 찍힌다. `rec/client.py`가 해당
+> 로거를 WARNING으로 낮춰 막고 있다. 이 설정을 지우면 키가 로그 파일에 평문으로 남는다.
 
 ---
 
 ## 명령어
 
 ```text
-gen-fixture --years N              화·목 시계열 fixture 생성 (재현 가능한 seed)
-collect --date YYYYMMDD            거래일 하나 수집
-backfill --from ... --to ...       구간 백필 (이미 확정된 날은 건너뜀)
-probe --date YYYYMMDD              실 API 원본 응답 덤프 및 필드명 출력
+collect [--source api|fixture]     전체 이력 수집 후 적재 (기본 api)
+probe                              실 API 원본 응답 덤프 및 필드명 출력
+gen-fixture --years N              오프라인 확인용 fixture 생성
 ```
 
-모두 `--source api|fixture`를 받는다. 기본값은 `fixture`다.
+날짜 인자와 백필 명령이 없다. API가 날짜 필터를 지원하지 않아 `collect` 한 번이 곧 전체
+백필이다.
 
 ---
 

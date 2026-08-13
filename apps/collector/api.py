@@ -23,7 +23,13 @@ logger = logging.getLogger(__name__)
 
 
 class CollectRequest(BaseModel):
-    tradeDate: date
+    """수집 요청.
+
+    이 API는 날짜 필터가 없어 항상 전체를 받는다. 거래일을 지정할 수단이 없으므로
+    본문은 비어 있어도 된다. 웹 관리자 화면의 날짜 입력은 기록용일 뿐이다.
+    """
+
+    tradeDate: date | None = None
 
 
 def create_app(service: CollectorService, repository: RecRepository, scheduler=None) -> FastAPI:
@@ -54,13 +60,16 @@ def create_app(service: CollectorService, repository: RecRepository, scheduler=N
         }
 
     @app.post("/jobs/collect")
-    def collect(request: CollectRequest) -> dict:
-        outcome = service.collect_day(request.tradeDate, job_type="MANUAL")
+    def collect(request: CollectRequest | None = None) -> dict:
+        outcome = service.collect(job_type="MANUAL")
         return {
-            "tradeDate": outcome.trade_date.isoformat(),
             "status": outcome.status,
             "rowsUpserted": outcome.rows_upserted,
-            "issues": outcome.issues,
+            "tradeDates": outcome.trade_dates,
+            "latestTradeDate": (
+                outcome.latest_trade_date.isoformat() if outcome.latest_trade_date else None
+            ),
+            "issues": outcome.issues[:20],
         }
 
     return app
