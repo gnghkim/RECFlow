@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, "Pretendard", "Malgun Gothic", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+
+  --color-canvas: oklch(0.99 0.002 250);
+  --color-surface: oklch(1 0 0);
+  --color-line: oklch(0.91 0.004 250);
+  --color-ink: oklch(0.22 0.01 250);
+  --color-muted: oklch(0.52 0.012 250);
+  --color-accent: oklch(0.55 0.14 250);
+  --color-up: oklch(0.55 0.16 25);
+  --color-down: oklch(0.52 0.13 245);
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-canvas: oklch(0.18 0.008 250);
+    --color-surface: oklch(0.22 0.009 250);
+    --color-line: oklch(0.31 0.01 250);
+    --color-ink: oklch(0.95 0.004 250);
+    --color-muted: oklch(0.68 0.012 250);
+  }
+}
+
+html, body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* 시세 표는 자릿수가 흔들리면 읽기 어렵다. 숫자는 항상 고정폭으로 정렬한다. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

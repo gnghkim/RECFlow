@@ -27,3 +27,8 @@ infra/backup/dumps/
 Thumbs.db
 .vscode/
 .idea/
+
+# Next.js
+apps/web/.next/
+apps/web/next-env.d.ts
+apps/web/.vercel/
