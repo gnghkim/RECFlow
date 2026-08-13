@@ -36,9 +36,9 @@ KPX Open API
  PostgreSQL
      ▲
      │ (Prisma)
- web (Next.js)  ← 계획 B
+ web (Next.js)
      ▲
-   Caddy ──▶ 인터넷        ← 계획 C
+   Caddy ──▶ 인터넷
 ```
 
 **웹만 외부에 노출된다.** 수집기와 PostgreSQL은 Docker 내부 네트워크에만 존재하며 호스트 포트를
@@ -50,9 +50,15 @@ KPX Open API
 
 **API 응답 필드명을 아는 파일은 `rec/mapping.py` 하나뿐이다.**
 `client`는 HTTP만, `repository`는 SQL만, `service`는 조립 순서만 안다. 세 모듈은 도메인
-dataclass로만 대화한다. 공공데이터포털의 응답 필드는 현재 확정되지 않았고, 키 발급 후
-`probe` 명령으로 실제 응답을 확인해 이 파일 하나만 고치면 된다. 다른 파일에 필드 문자열을
-복사하지 말 것.
+dataclass로만 대화한다. 이 격리 덕분에 실제 응답이 설계 가정과 완전히 달랐을 때도
+`mapping.py`와 `client.py`만 고쳐 대응했고 스키마와 `repository`·`validation`은 그대로 두었다.
+다른 파일에 필드 문자열을 복사하지 말 것.
+
+**API 응답은 거래일 1행에 육지·제주를 컬럼으로 담아 준다.**
+우리 스키마는 (거래일, 구역) 단위이므로 `mapping.py`가 한 item을 `LAND`/`JEJU`/`TOTAL`
+세 행으로 펼친다. `TOTAL`의 평균가와 최고·최저가는 API가 주지 않아 우리가 만드는 파생값이다.
+평균가는 **거래량 가중평균**이며, 산술평균을 쓰면 거래량이 50배 차이나는 두 시장을 같은
+비중으로 섞게 된다.
 
 **원본은 매핑보다 먼저 저장한다.**
 매핑이 실패해도 `rec_market_raw`에 원본이 남으므로 재처리로 복구할 수 있다. API 스펙이
@@ -169,9 +175,13 @@ docker compose up -d collector
 
 | 시각 | 작업 |
 |---|---|
-| 화·목 16:30 | 당일 수집 (장 종료 후) |
-| 화·목 18:00 | 당일 재확인 |
-| 매일 09:00 | 최근 30일 누락일 점검 |
+| 화·목 16:30 | 장 종료 직후 수집 |
+| 화·목 18:00 | 같은 날 재확인 |
+| 매일 09:00 | 재수집 (늦게 올라온 거래일을 잡는 마지막 그물) |
+
+세 번 모두 전체 이력을 받아 UPSERT하므로 중복이 생기지 않는다. 공개 API에 당일 데이터가
+올라오는 시각이 장 종료와 다를 수 있어 아침 수집을 남겨두었다. 2026-08-13(목) 19시에 확인했을
+때 최신 데이터가 아직 08-11(화)이었다.
 
 ### 5. 웹 실행
 
@@ -264,8 +274,8 @@ apps/collector/      Python 수집기
   jobs/              APScheduler 스케줄 등록
   api.py             내부 전용 FastAPI (health, 수동 수집)
   cli.py             명령줄 인터페이스
-apps/web/            Next.js 웹 (계획 B)
-infra/               Caddy, 백업 스크립트 (계획 C)
+apps/web/            Next.js 웹 (대시보드, 시장분석, 보유REC, 시뮬레이션)
+infra/               Caddy 설정, 백업·복구 스크립트
 docs/
   superpowers/specs/ 설계문서
   superpowers/plans/ 구현계획
@@ -279,3 +289,4 @@ docs/
 - [설계문서](docs/superpowers/specs/2026-08-12-rec-price-tracker-design.md) — 아키텍처, 스키마, 계산 규칙, 변경 사유
 - [계획 A — 데이터 파이프라인](docs/superpowers/plans/2026-08-12-plan-a-data-pipeline.md)
 - [계획 B — 웹 애플리케이션](docs/superpowers/plans/2026-08-13-plan-b-web-application.md)
+- [계획 C — 배포와 운영](docs/superpowers/plans/2026-08-13-plan-c-deployment.md)
