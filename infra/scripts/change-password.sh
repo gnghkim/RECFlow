@@ -28,7 +28,8 @@ while [ $# -gt 0 ]; do
       ;;
     --with-secret) ROTATE_SECRET=1 ;;
     -h|--help)
-      sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+      # 파일 상단 주석 블록만 출력한다. set -eu 를 만나면 멈춘다.
+      sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
