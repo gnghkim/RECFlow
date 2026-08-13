@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/.venv
+**/__pycache__
+**/.pytest_cache
+apps/collector/fixtures
+apps/collector/api-samples
+.git
+.env
+.env.*
+!.env.example
+docs
+infra/backup/dumps
