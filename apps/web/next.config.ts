@@ -1,4 +1,12 @@
 import type { NextConfig } from 'next'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
+// 저장소 루트 .env는 Prisma와 collector도 함께 쓰는 단일 진실 원천이다.
+const rootEnv = path.resolve(process.cwd(), '../../.env')
+if (existsSync(rootEnv)) {
+  process.loadEnvFile(rootEnv)
+}
 
 const nextConfig: NextConfig = {
   output: 'standalone',
