@@ -74,7 +74,7 @@
 
 **Files:**
 - Create: `apps/web/Dockerfile`
-- Create: `apps/web/.dockerignore`
+- Create: `.dockerignore` (저장소 루트. 빌드 컨텍스트가 루트이므로 여기여야 적용된다)
 - Modify: `.gitignore` (필요 시)
 
 **Interfaces:**
@@ -83,7 +83,12 @@
 
 - [ ] **Step 1: `.dockerignore` 작성**
 
-`apps/web/.dockerignore` — 빌드 컨텍스트가 저장소 루트이므로 루트 기준 경로를 쓴다.
+**저장소 루트의 `.dockerignore`**에 쓴다. Docker는 빌드 컨텍스트 최상단의 `.dockerignore`만
+읽으므로 `apps/web/.dockerignore`를 만들면 무시된다. 동작하지 않는 파일을 두면 나중에 누가 보고
+적용된다고 착각한다.
+
+수집기 빌드는 영향받지 않는다. 컨텍스트가 `./apps/collector`라 그쪽 `.dockerignore`를 읽는다.
+루트 컨텍스트를 쓰는 빌드는 웹 하나뿐이다.
 
 ```text
 **/node_modules
@@ -215,7 +220,7 @@ Expected: 대략 200~400MB. 1GB를 넘으면 `.dockerignore`가 제대로 동작
 
 ```powershell
 cd C:\Dev\RECFlow
-git add apps/web/Dockerfile apps/web/.dockerignore
+git add apps/web/Dockerfile .dockerignore
 git commit -m "feat(deploy): 웹 컨테이너 이미지 추가
 
 빌드 컨텍스트는 저장소 루트다. npm workspaces와 Prisma 스키마가
@@ -472,14 +477,24 @@ Expected: `published`가 나타나는 서비스는 **caddy 하나뿐**이고 80�
 
 - [ ] **Step 6: 임시 파일 정리와 gitignore**
 
-`.gitignore`에 아래를 추가한다.
+`.gitignore`에 아래를 추가한다. 기존 `.env.*` 규칙이 `.env.prod.example`까지 무시하므로
+**예외를 명시해야 한다.** 빠뜨리면 배포 문서만 있고 예시 파일이 없는 상태가 된다.
 
 ```text
 # 운영 환경변수 (예시 파일만 커밋한다)
 .env.prod
+!.env.prod.example
 # 백업 산출물
 infra/backup/dumps/
 ```
+
+추가 후 실제로 추적 대상이 되는지 확인한다.
+
+```powershell
+git check-ignore -v .env.prod.example
+```
+
+Expected: 아무것도 출력되지 않는다(무시되지 않음). 규칙이 출력되면 예외가 적용되지 않은 것이다.
 
 ```powershell
 Remove-Item C:\Dev\RECFlow\.env.prod -ErrorAction SilentlyContinue
