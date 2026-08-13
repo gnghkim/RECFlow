@@ -13,11 +13,11 @@ REC 현물시장은 매주 화·목요일에만 열린다. 오늘 수집하지 �
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 계획 A | 수집 파이프라인 — 스키마, 수집기, 스케줄러, 백필 | **완료** |
-| 계획 B | 웹 — 대시보드, 시장분석, 보유REC, 시뮬레이션 | **완료** |
+| 계획 B | 웹 — 인증, 대시보드, 시장분석, 보유REC, 시뮬레이션, 관리 | **완료** |
 | 계획 C | 배포 — 운영 compose, Caddy, 자동백업 | 예정 |
 
-- 테스트 68개 통과
-- fixture 기준 3년치(거래일 313일 × 육지/제주/합계) 적재 검증 완료
+- 테스트 **180개** 통과 (수집기 68 · 웹 112)
+- fixture 기준 3년치(거래일 313일 × 육지/제주/합계 = 939행) 적재 검증 완료
 - 공공데이터포털 API 키는 아직 미발급 상태이며, 발급 시 [전환 절차](#api-키가-발급되면)를 따른다
 
 ---
@@ -73,6 +73,15 @@ Python 수집기는 어떤 DDL도 실행하지 않는다. 테이블 변경은 �
 테스트 픽스처가 테이블을 비우기 때문에, 대상 데이터베이스 이름을 검사해 아니면 즉시 중단한다.
 환경변수 설정을 잊어도 축적된 시세가 지워지지 않는다.
 
+**웹 화면은 전부 동적 렌더링이다.**
+Prisma 조회는 Next의 동적 신호가 아니라서 그냥 두면 빌드 시점 값으로 정적 고정되고, 수집이
+돌아도 화면 숫자가 갱신되지 않는다. `app/(app)/layout.tsx`의 `force-dynamic` 한 줄이 하위
+전체에 적용된다. 지우면 화면이 멀쩡해 보이는 채로 낡은 가격을 보여준다.
+
+**`.env`는 저장소 루트 하나뿐이다.**
+Next는 자기 프로젝트 루트에서만 `.env`를 찾으므로 `next.config.ts`가 루트 파일을 명시적으로
+읽는다. `apps/web/.env`를 따로 만들지 말 것. 비밀값이 두 곳에 있으면 키 교체 때 한쪽만 바뀐다.
+
 ---
 
 ## 기술 스택
@@ -82,10 +91,17 @@ Python 수집기는 어떤 DDL도 실행하지 않는다. 테이블 변경은 �
 | 수집기 | Python 3.12, httpx, psycopg 3, APScheduler, FastAPI, pytest |
 | 데이터베이스 | PostgreSQL 16 |
 | 스키마 | Prisma 6 |
-| 웹 (계획 B) | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui, Recharts |
-| 실행 | Docker Compose |
+| 웹 | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Recharts 3, jose, decimal.js |
+| 실행 | Docker Compose (수집기·DB) / 호스트 Node 24 (웹) |
 
 파이썬은 **컨테이너 안에서만** 실행한다. 호스트에 가상환경을 만들지 않는다.
+
+Next 16은 `middleware.ts`가 아니라 **`proxy.ts`**를 쓰고 Node 런타임에서 돈다. Tailwind 4는
+`tailwind.config.js` 없이 CSS의 `@import`와 `@theme`로 설정한다. 둘 다 이전 버전과 다르므로
+예전 관행대로 고치지 말 것.
+
+UI 프리미티브는 shadcn CLI 대신 직접 작성했다. 필요한 컴포넌트가 적고, CLI의 대화형 프롬프트가
+자동화 환경에서 멈추기 때문이다. API 형태는 shadcn과 맞춰 두어 나중에 교체할 수 있다.
 
 ---
 
@@ -161,9 +177,17 @@ npm run dev
 ## 테스트
 
 ```powershell
-docker compose run --rm collector-test                                   # 전체
-docker compose run --rm collector-test python -m pytest tests/test_mapping.py -v   # 일부
+# 수집기 (컨테이너)
+docker compose run --rm collector-test
+docker compose run --rm collector-test python -m pytest tests/test_mapping.py -v
+
+# 웹 (호스트)
+npm run test
+npm run build
 ```
+
+웹 테스트는 `lib/` 아래 순수 함수만 대상으로 한다. 이동평균·백분위·평가액·시뮬레이션·매각점수가
+여기 있고, **데이터가 부족할 때 0이 아니라 `null`을 반환하는 성질**을 이 테스트들이 잠근다.
 
 ---
 
@@ -233,4 +257,5 @@ docs/
 ## 문서
 
 - [설계문서](docs/superpowers/specs/2026-08-12-rec-price-tracker-design.md) — 아키텍처, 스키마, 계산 규칙, 변경 사유
-- [계획 A — 데이터 파이프라인](docs/superpowers/plans/2026-08-12-plan-a-data-pipeline.md) — 작업 단위 구현계획
+- [계획 A — 데이터 파이프라인](docs/superpowers/plans/2026-08-12-plan-a-data-pipeline.md)
+- [계획 B — 웹 애플리케이션](docs/superpowers/plans/2026-08-13-plan-b-web-application.md)
